@@ -1,0 +1,388 @@
+# FastAPI Backend Deployment on AWS EC2 (Ubuntu)
+
+This guide explains how to deploy a FastAPI backend on an Ubuntu EC2 instance using:
+
+* FastAPI
+* Uvicorn
+* Systemd Service
+* Nginx Reverse Proxy
+* GitHub Repository
+
+---
+
+## Prerequisites
+
+* AWS EC2 Ubuntu instance
+* SSH key pair (`.pem`)
+* Security Group allowing:
+
+  * SSH (22)
+  * HTTP (80)
+  * HTTPS (443) *(optional)*
+
+---
+
+## 1. Connect to EC2 Instance
+
+```bash
+ssh -i "My First Key Pair.pem" ubuntu@<EC2_PUBLIC_DNS>
+```
+
+Example:
+
+```bash
+ssh -i "My First Key Pair.pem" ubuntu@ec2-xx-xx-xx-xx.compute-1.amazonaws.com
+```
+
+---
+
+## 2. Update Server Packages
+
+```bash
+sudo apt update
+sudo apt upgrade -y
+```
+
+---
+
+## 3. Install Required Dependencies
+
+### Python
+
+```bash
+sudo apt install python3-pip python3-venv python3-dev -y
+```
+
+### Nginx
+
+```bash
+sudo apt install nginx -y
+```
+
+### Git
+
+```bash
+sudo apt install git -y
+```
+
+---
+
+## 4. Clone Backend Repository
+
+```bash
+cd ~
+
+git clone https://github.com/<username>/<repository>.git
+
+cd <repository>
+```
+
+Example:
+
+```bash
+git clone https://github.com/manikantakallakuri8-bit/backpack-be.git
+
+cd backpack-be
+```
+
+---
+
+## 5. Create Virtual Environment
+
+```bash
+python3 -m venv venv
+```
+
+Activate the environment:
+
+```bash
+source venv/bin/activate
+```
+
+---
+
+## 6. Install Python Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+## 7. Configure Environment Variables
+
+Create or edit the `.env` file:
+
+```bash
+nano .env
+```
+
+Example:
+
+```env
+DATABASE_URL=your_database_url
+SECRET_KEY=your_secret_key
+OPENAI_API_KEY=your_api_key
+```
+
+Save and exit.
+
+---
+
+## 8. Create Systemd Service
+
+Create a service file:
+
+```bash
+sudo nano /etc/systemd/system/backpack.service
+```
+
+Paste:
+
+```ini
+[Unit]
+Description=Backpack FastAPI Application
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/backpack-be
+Environment="PATH=/home/ubuntu/backpack-be/venv/bin"
+EnvironmentFile=/home/ubuntu/backpack-be/.env
+
+ExecStart=/home/ubuntu/backpack-be/venv/bin/uvicorn main:app \
+    --host 0.0.0.0 \
+    --port 8000
+
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+```
+
+> Note: Replace `backpack-be` with your project directory if different.
+
+---
+
+## 9. Enable and Start Service
+
+Reload systemd:
+
+```bash
+sudo systemctl daemon-reload
+```
+
+Enable service on boot:
+
+```bash
+sudo systemctl enable backpack
+```
+
+Start service:
+
+```bash
+sudo systemctl start backpack
+```
+
+Check status:
+
+```bash
+sudo systemctl status backpack
+```
+
+---
+
+## 10. Configure Nginx Reverse Proxy
+
+Create an Nginx site configuration:
+
+```bash
+sudo nano /etc/nginx/sites-available/backpack
+```
+
+Paste:
+
+```nginx
+server {
+    listen 80;
+    server_name _; #replace _ with domain name like backpackapp.duckdns.org
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+---
+
+## 11. Enable Nginx Configuration
+
+```bash
+sudo ln -s /etc/nginx/sites-available/backpack /etc/nginx/sites-enabled/
+```
+
+Remove default configuration:
+
+```bash
+sudo rm /etc/nginx/sites-enabled/default
+```
+
+---
+
+## 12. Test and Restart Nginx
+
+Validate configuration:
+
+```bash
+sudo nginx -t
+```
+
+Restart Nginx:
+
+```bash
+sudo systemctl restart nginx
+```
+
+Check status:
+
+```bash
+sudo systemctl status nginx
+```
+
+Install Certbot
+```bash
+sudo apt install certbot python3-certbot-nginx -y
+```
+
+Run Certbot:
+```bash
+sudo certbot --nginx -d backpackapi.duckdns.org
+```
+---
+
+## 13. Monitor Logs
+
+### FastAPI Service Logs
+
+```bash
+sudo journalctl -u backpack -f
+```
+
+### Nginx Logs
+
+```bash
+sudo tail -f /var/log/nginx/error.log
+```
+
+```bash
+sudo tail -f /var/log/nginx/access.log
+```
+
+---
+
+## 14. Common Commands
+
+### Restart Backend
+
+```bash
+sudo systemctl restart backpack
+```
+
+### Stop Backend
+
+```bash
+sudo systemctl stop backpack
+```
+
+### Start Backend
+
+```bash
+sudo systemctl start backpack
+```
+
+### View Service Status
+
+```bash
+sudo systemctl status backpack
+```
+
+### Reload Nginx
+
+```bash
+sudo systemctl reload nginx
+```
+
+---
+
+## 15. Deploy Updates
+
+Pull latest code:
+
+```bash
+cd ~/backpack-be
+
+git pull origin main
+```
+
+Activate virtual environment:
+
+```bash
+source venv/bin/activate
+```
+
+Install new dependencies (if any):
+
+```bash
+pip install -r requirements.txt
+```
+
+Restart application:
+
+```bash
+sudo systemctl restart backpack
+```
+
+---
+
+## Optional: HTTPS with Let's Encrypt
+
+Install Certbot:
+
+```bash
+sudo apt install certbot python3-certbot-nginx -y
+```
+
+Generate SSL certificate:
+
+```bash
+sudo certbot --nginx -d yourdomain.com
+```
+
+Auto-renewal test:
+
+```bash
+sudo certbot renew --dry-run
+```
+
+---
+
+## Architecture
+
+```text
+Internet
+    │
+    ▼
+Nginx (Port 80/443)
+    │
+    ▼
+FastAPI + Uvicorn (Port 8000)
+    │
+    ▼
+Database / External Services
+```
