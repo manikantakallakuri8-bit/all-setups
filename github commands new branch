@@ -1,0 +1,12 @@
+git checkout main
+git pull origin main
+git checkout -b branch
+git status
+git add .
+git commit -m "fixes context"
+git push origin branch
+
+create and merge pull request
+
+git checkout main
+git pull origin main
